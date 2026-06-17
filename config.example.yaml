@@ -1,0 +1,50 @@
+# VisionCar yapılandırma şablonu.
+# Bu dosyayı `config.yaml` olarak kopyalayın ve gerçek değerleri girin.
+# config.yaml .gitignore'dadır — kimlik bilgileri repoya GİRMEZ.
+#
+# Şifre için iki seçenek:
+#   1) rtsp_url içine doğrudan yazın (config.yaml gitignore'da olduğu için güvenli)
+#   2) rtsp_url içinde {password} bırakın ve VISIONCAR_RTSP_PASSWORD ortam değişkenini ayarlayın
+#   3) Tüm URL'i VISIONCAR_RTSP_URL ortam değişkeniyle ezin
+
+camera:
+  # Ana akış 101, alt akış 102. Şifreyi {password} ile bırakıp env'den okutabilirsiniz.
+  rtsp_url: "rtsp://admin:{password}@192.168.137.1:554/Streaming/Channels/101"
+  reconnect_delay_sec: 2.0
+  # OpenCV/FFMPEG için tercih edilen taşıma protokolü (tcp daha kararlı)
+  rtsp_transport: "tcp"
+  # Kameraya hiç erişemediğinizde headless test için yedek kaynak:
+  #   - bir video dosyası yolu, ya da
+  #   - bir webcam indeksi (0, 1, ...)
+  # null bırakırsanız sadece rtsp_url kullanılır.
+  fallback_source: null
+
+recording:
+  output_dir: "data/recordings"
+  # Her N karede bir kaydet (1 = her kare). Uzamsal veri (araç/kablo) toplarken
+  # çeşitlilik için büyük tutun (ör. 5-10); LED yanıp-sönme testinde küçük (1-2).
+  record_every_n: 1
+
+report:
+  output_dir: "data/report_shots"
+
+# ROI (ilgi bölgesi): tam çözünürlüklü piksellerde x, y, w, h.
+# Hepsi null ise tüm kare kullanılır. Arayüzden seçilince buraya yazılır.
+roi:
+  x: null
+  y: null
+  w: null
+  h: null
+
+pulse:
+  window_frames: 60            # zamansal pencere uzunluğu (kare)
+  brightness_std_threshold: 6.0  # ROI parlaklık std'si bunun üstündeyse sinyal var
+  min_blink_crossings: 4       # pencerede en az bu kadar ortalama-geçişi = yanıp sönme
+
+preview:
+  max_width: 960               # SADECE tarayıcı önizlemesi için küçültme sınırı
+  jpeg_quality: 70             # SADECE önizleme JPEG kalitesi
+
+server:
+  host: "0.0.0.0"
+  port: 8000

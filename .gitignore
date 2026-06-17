@@ -1,0 +1,45 @@
+# === Kimlik bilgileri (ASLA commit etme) ===
+config.yaml
+.env
+
+# === Büyük / yeniden üretilebilir veriler ve çıktılar ===
+# Saha kayıtları, rapor görselleri, sentetik demo vb. (data/ ~GB'larca)
+data/
+# Eğitim/çıkarım veri setleri (Roboflow export vb.)
+datasets/
+# Eğitim ve MVP çıktıları (ağırlıklar, grafikler, anotasyonlu video/görsel)
+runs/
+# Ad-hoc test girdileri
+test_images/
+
+# === Medya ===
+*.mp4
+*.avi
+*.mov
+*.mkv
+
+# === Model ağırlıkları ===
+# COCO backbone'ları ultralytics tarafından otomatik indirilir — repoda tutma.
+yolo11n.pt
+yolo11s.pt
+yolo11m.pt
+yolo11l.pt
+yolo11x.pt
+yolov8*.pt
+*.cache
+# Not: kendi eğittiğimiz models/kademe1_gun.pt repoda KALIR (proje çıktısı).
+
+# === Python ===
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+env/
+.ipynb_checkpoints/
+
+# === IDE / OS ===
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

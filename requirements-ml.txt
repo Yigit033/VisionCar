@@ -1,0 +1,11 @@
+# Sürüm 1.0 MVP ve model eğitimi için ek (AĞIR) bağımlılıklar.
+# Faz 0 saha test aracı bunlara İHTİYAÇ DUYMAZ (bkz. requirements.txt).
+#
+# ÖNEMLİ — torch/torchvision'ı CUDA sürümüyle eşleşecek şekilde kurun.
+# CPU-only torchvision + CUDA torch = "torchvision::nms CUDA" hatası.
+# GPU (CUDA 11.8) için örnek:
+#   pip install --index-url https://download.pytorch.org/whl/cu118 torch==2.5.0+cu118 torchvision==0.20.0+cu118
+# Sürümünüze uygun komut için: https://pytorch.org/get-started/locally/
+
+ultralytics>=8.3
+# torch ve torchvision'ı yukarıdaki nota göre ayrıca kurun (CUDA eşleşmesi şart).

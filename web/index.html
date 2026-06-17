@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>VisionCar — Saha Test Aracı</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <!-- Durum çubuğu (sürekli görünür) -->
+  <header class="statusbar">
+    <div class="brand">
+      <span class="dot" id="conn-dot"></span>
+      <strong>VisionCar</strong>
+      <span class="muted">Saha Test Aracı</span>
+    </div>
+    <div class="stats">
+      <div class="stat"><label>Çözünürlük</label><span id="st-res">—</span></div>
+      <div class="stat"><label>FPS</label><span id="st-fps">—</span></div>
+      <div class="stat"><label>Kayıt</label><span id="st-rec">kapalı</span></div>
+      <div class="stat"><label>Etiket</label><span id="st-label">—</span></div>
+      <div class="stat result"><label>Tespit</label><span id="st-result">—</span></div>
+    </div>
+  </header>
+
+  <main class="layout">
+    <!-- Sol: canlı önizleme + ROI/pulse overlay -->
+    <section class="preview-pane">
+      <div class="preview-wrap" id="preview-wrap">
+        <img id="stream" src="/api/stream" alt="canlı önizleme" />
+        <canvas id="overlay"></canvas>
+        <div class="preview-hint" id="preview-hint">
+          ROI seçmek için görüntü üzerinde sürükleyin
+        </div>
+      </div>
+    </section>
+
+    <!-- Sağ: kontroller -->
+    <aside class="controls">
+      <div class="card">
+        <h2>ROI (ilgi bölgesi)</h2>
+        <p class="muted small">LED / şarj portu bölgesini fareyle seçin. Seçim
+          config'e kaydedilir.</p>
+        <div class="roi-readout" id="roi-readout">ROI: tüm kare</div>
+        <button class="btn ghost" id="btn-clear-roi">ROI'yi temizle</button>
+      </div>
+
+      <div class="card">
+        <h2>Etiketli kayıt</h2>
+        <label class="field-label" for="label-input">Koşul etiketi</label>
+        <input id="label-input" class="text-input" type="text"
+               placeholder="ör. dogrudan_gunes, golge, gece_ir"
+               value="dogrudan_gunes" />
+        <div class="btn-row">
+          <button class="btn primary" id="btn-record">Kaydı başlat</button>
+        </div>
+        <div class="rec-meta muted small" id="rec-meta"></div>
+      </div>
+
+      <div class="card">
+        <h2>Rapor görseli</h2>
+        <p class="muted small">Tek tıkla tam çözünürlüklü ham + anotasyonlu PNG
+          ve index.csv satırı üretir.</p>
+        <button class="btn" id="btn-snapshot">Snapshot al</button>
+        <div class="snap-meta muted small" id="snap-meta"></div>
+      </div>
+
+      <div class="card pulse-card">
+        <h2>Pulse sinyali</h2>
+        <div class="pulse-grid">
+          <div><label>Parlaklık</label><span id="p-bright">—</span></div>
+          <div><label>Genlik (std)</label><span id="p-amp">—</span></div>
+          <div><label>Frekans</label><span id="p-freq">—</span></div>
+          <div><label>Geçiş</label><span id="p-cross">—</span></div>
+        </div>
+      </div>
+    </aside>
+  </main>
+
+  <!-- Alt: son rapor görselleri galerisi -->
+  <footer class="gallery-pane">
+    <div class="gallery-head">
+      <h2>Son rapor görselleri</h2>
+      <button class="btn ghost small" id="btn-refresh-gallery">Yenile</button>
+    </div>
+    <div class="gallery" id="gallery"></div>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>

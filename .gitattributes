@@ -1,0 +1,11 @@
+# Tutarlı satır sonu: repoda LF, checkout'ta platforma göre normalize edilir.
+* text=auto eol=lf
+
+# İkili dosyalar — diff/normalize edilmesin.
+*.pt   binary
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.webp binary
+*.mp4  binary
+*.avi  binary
