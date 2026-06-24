@@ -40,7 +40,7 @@ def check(name: str, ok: bool, detail: str = "") -> bool:
 async def main() -> int:
     tmp = Path(tempfile.mkdtemp(prefix="evihlal_"))
     s = Settings(
-        camera_mode="mock", grace_period_sec=0.2, debounce_window_sec=60.0,
+        camera_mode="mock", grace_period_sec=0.2, vacancy_grace_sec=0.3,
         data_dir=tmp, retention_days=0.0,  # retention testinde her şey 'eski'
     )
     telemetry = MockTelemetry("NOT_CHARGING")
@@ -73,12 +73,24 @@ async def main() -> int:
     ok &= check("ST-02 için DB'de kayıt yok",
                 store.last_violation_at("ST-02") is None)
 
-    # 3) debounce -> aynı istasyon tekrar tek kayıt
-    print("\n[3] Debounce -> ST-01 tekrar, yeni kayıt YOK")
+    # 3) oturum dedup -> aynı araç durdukça TEK olay
+    print("\n[3] Oturum dedup -> ST-01 oturumu açık, tekrar 'active' YENİ olay YOK")
     before = len(store.list(1000))
-    ev3 = await engine.evaluate("ST-01", source="smoke")
+    res = await engine.on_occupancy_event("ST-01", source="smoke")  # aynı araç hâlâ orada
+    await asyncio.sleep(s.grace_period_sec + 0.3)
     after = len(store.list(1000))
-    ok &= check("debounce ihlali engelledi", ev3 is None and before == after,
+    ok &= check("açık oturumda yeni olay yok (aynı araç=tek olay)",
+                before == after and res == "session_active", f"{res}, {before}->{after}")
+
+    # 3b) A çıkar -> oturum kapanır -> YENİ araç gelir -> YENİ olay
+    print("\n[3b] A ayrılır (oturum kapanır) -> yeni araç -> YENİ olay VAR")
+    await engine.on_clear_event("ST-01")                 # A bölgeden çıktı
+    await asyncio.sleep(s.vacancy_grace_sec + 0.3)        # boşalma doğrulansın -> oturum kapanır
+    before = len(store.list(1000))
+    await engine.on_occupancy_event("ST-01", source="smoke")  # yeni araç girdi
+    await asyncio.sleep(s.grace_period_sec + 0.3)
+    after = len(store.list(1000))
+    ok &= check("yeni araç için YENİ olay üretildi", after == before + 1,
                 f"{before}->{after}")
 
     # 4) store-and-forward

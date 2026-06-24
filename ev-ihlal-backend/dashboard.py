@@ -18,7 +18,7 @@ _STATE_COLOR = {
 
 
 def _row(e: ViolationEvent) -> str:
-    when = e.detected_at.strftime("%Y-%m-%d %H:%M:%S") if e.detected_at else "-"
+    when = (e.detected_at.strftime("%Y-%m-%d %H:%M:%S") + " UTC") if e.detected_at else "-"
     color = _STATE_COLOR.get(e.state, "#8a909c")
     if e.image_key:
         thumb = (f'<a href="/media/{html.escape(e.image_key)}" target="_blank">'
@@ -80,7 +80,7 @@ def render_dashboard(events: Iterable[ViolationEvent], settings: Settings) -> st
   <h1>🅿️ EV İhlal Panosu</h1>
   <span class="badge">kamera: {cam_badge}</span>
   <span class="badge">grace: {settings.grace_period_sec:.0f}s</span>
-  <span class="badge">debounce: {settings.debounce_window_sec:.0f}s</span>
+  <span class="badge">vacancy: {settings.vacancy_grace_sec:.0f}s</span>
   <span class="badge">retention: {settings.retention_days:.0f} gün</span>
 </header>
 <div class="wrap">

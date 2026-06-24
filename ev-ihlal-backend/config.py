@@ -53,9 +53,10 @@ class Settings:
     camera_channel: str = "101"
     camera_timeout_sec: float = 5.0
 
-    # kurallar
-    grace_period_sec: float = 90.0
-    debounce_window_sec: float = 300.0
+    # kurallar (oturum modeli)
+    grace_period_sec: float = 90.0          # tetikten ihlal kararına kadar bekleme
+    vacancy_grace_sec: float = 15.0         # hedef bu kadar süre dönmezse oturum kapanır
+    repeat_notify_sec: float = 0.0          # 0=oturum başına tek olay; >0=süregelen re-kanıt aralığı
     non_violation_statuses: tuple[str, ...] = ("CHARGING", "PREPARING")
 
     # telemetri (mock)
@@ -97,7 +98,8 @@ class Settings:
             camera_channel=_str("CAMERA_CHANNEL", "101"),
             camera_timeout_sec=_float("CAMERA_TIMEOUT_SEC", 5.0),
             grace_period_sec=_float("GRACE_PERIOD_SEC", 90.0),
-            debounce_window_sec=_float("DEBOUNCE_WINDOW_SEC", 300.0),
+            vacancy_grace_sec=_float("VACANCY_GRACE_SEC", 15.0),
+            repeat_notify_sec=_float("REPEAT_NOTIFY_SEC", 0.0),
             non_violation_statuses=_csv("NON_VIOLATION_STATUSES",
                                         ("CHARGING", "PREPARING")),
             telemetry_default_status=_str("TELEMETRY_DEFAULT_STATUS",

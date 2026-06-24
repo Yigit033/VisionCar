@@ -78,8 +78,11 @@ curl -X POST localhost:8090/api/telemetry/mock        -H "Content-Type: applicat
 ## Senior detaylar (baştan gömülü)
 
 - **Kimlik:** her olayda `station_id` + `detected_at`.
-- **Idempotency / debounce:** aynı istasyon için `DEBOUNCE_WINDOW_SEC` içinde tek olay
-  (DB tabanlı → restart'a dayanıklı). Bildirim spam'i olmaz.
+- **Oturum (occupancy session) modeli:** bir işgal = tek olay. Araç girişinden çıkışına
+  kadar TEK oturum açılır; oturum açıkken tekrar tetik yeni olay üretmez (spam yok).
+  Hedef `VACANCY_GRACE_SEC` boyunca dönmezse oturum kapanır → **yeni gelen araç YENİ olay**
+  üretir. (Eski zaman-tabanlı debounce'un "A çıkıp B girince B'yi yutma" hatası böyle çözüldü.)
+  `REPEAT_NOTIFY_SEC>0` ise aynı oturumda o aralıkla süregelen-ihlal re-kanıtı üretilir.
 - **Store-and-forward:** olay **önce yerele** yazılır (DB = outbox), sonra `Forwarder`
   uplink ile merkeze gönderir; hata olursa retry'lanır. Faz 2'de uplink kopsa olaylar
   birikir, bağlantı gelince iletilir.

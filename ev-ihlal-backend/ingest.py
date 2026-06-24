@@ -44,7 +44,9 @@ class AlarmIngest:
                 estate = ev.get("eventState", "active").lower()
                 if etype not in self.s.intrusion_event_types:
                     continue
-                if estate == "inactive":          # hedef bölgeden çıktı — tetikleme
+                if estate == "inactive":          # hedef bölgeden ÇIKTI → sayımı iptal et
+                    asyncio.run_coroutine_threadsafe(
+                        self.engine.on_clear_event(self.s.station_id), self.loop)
                     continue
                 log.info("📷 ISAPI alarm: %s (%s) -> işgal olayı (istasyon=%s)",
                          etype, estate, self.s.station_id)

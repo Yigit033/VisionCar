@@ -1,20 +1,25 @@
-"""İhlal motoru — orkestrasyon. Timer + debounce + ihlal kararı.
+"""İhlal motoru — OTURUM (occupancy session) tabanlı orkestrasyon.
 
-Akış (her istasyon için):
-  1) İşgal olayı gelir (gerçek kamera alarmı ya da Faz 1 manuel/sim tetik).
-  2) O istasyon için grace_period geri sayımı başlar (zaten sayıyorsa yeni tetik yok sayılır).
-  3) Süre dolunca telemetri (ground truth) sorulur.
-  4) Durum 'ihlal değil' kümesindeyse (ör. CHARGING): olay sessizce kapanır, bildirim yok.
-  5) Aksi halde İHLAL: snapshot (gerçek kamera) -> storage -> olay DB'ye yazılır (outbox)
-     -> bildirim -> forward kuyruğuna alınır.
-Debounce: aynı istasyon için debounce_window içinde tek ihlal (DB tabanlı, restart'a dayanıklı).
+Model (bir istasyon için):
+  - VCA 'active' (hedef bölgede) → işgal başlar. Aktif oturum yoksa grace_period sayımı.
+  - Grace dolunca telemetri (ground truth) sorulur:
+      * CHARGING/PREPARING (ihlal değil) → olay yok, oturum AÇILMAZ; sonraki active'te
+        tekrar sorulur (şarj bitip park devam ederse o zaman yakalanır).
+      * aksi (ihlal) → snapshot + DB + bildirim + forward; OTURUM AÇILIR (bu işgal raporlandı).
+  - Oturum AÇIKKEN gelen tekrar active'ler YENİ olay üretmez (aynı araç = tek olay).
+      * repeat_notify_sec > 0 ise o aralıkla 'süregelen ihlal' re-kanıtı üretilir.
+  - VCA 'inactive' → hedef ayrıldı; vacancy_grace_sec içinde dönmezse OTURUM KAPANIR →
+    istasyon sıradaki araç için hazır. (Kısa VCA titremesi oturumu kapatmaz.)
+  - Sonuç: aynı araç 10 dk dursa TEK olay; A çıkıp B girince B için YENİ olay.
+
+Bloklayan I/O (snapshot/dosya/DB) çok-istasyonlu çalışmada loop'u durdurmasın diye
+ayrı thread'e taşınır. Karar mantığı görselleştirmeden bağımsızdır.
 """
 from __future__ import annotations
 
 import asyncio
 import logging
 import uuid
-from datetime import timedelta
 from typing import Optional
 
 from config import Settings
@@ -36,22 +41,49 @@ class ViolationEngine:
         self.store = store
         self.notifier = notifier
         self.forwarder = forwarder
-        self._pending: dict[str, asyncio.Task] = {}
 
-    # ---- olay girişi ----------------------------------------------------
+        self._present: dict[str, bool] = {}          # VCA durumu: hedef şu an bölgede mi
+        self._session_active: dict[str, bool] = {}    # bu işgal için olay kaydedildi mi
+        self._last_incident_at: dict[str, object] = {}  # son olay zamanı (repeat_notify için)
+        self._pending: dict[str, asyncio.Task] = {}   # grace geri sayımı (olay öncesi)
+        self._vacancy: dict[str, asyncio.Task] = {}    # boşalma doğrulama sayacı
+
+    # ---- olay girişi (VCA active) --------------------------------------
     async def on_occupancy_event(self, station_id: str, source: str = "manual") -> str:
-        """İşgal olayı: grace_period geri sayımını başlatır."""
-        task = self._pending.get(station_id)
-        if task and not task.done():
-            return "already_pending"          # süregelen işgal — yeni sayaç yok
-        if self._debounced(station_id):
-            return "debounced"
+        """İşgal olayı (VCA 'active')."""
+        self._present[station_id] = True
+        self._cancel_vacancy(station_id)             # hedef döndü/duruyor → boşalmayı iptal et
+
+        # Oturum zaten açık (bu araç için olay kaydedilmiş) → yeni olay yok.
+        if self._session_active.get(station_id):
+            if self.s.repeat_notify_sec > 0 and self._repeat_due(station_id):
+                if not self._has_pending(station_id):
+                    self._pending[station_id] = asyncio.create_task(
+                        self._countdown(station_id, source))
+                    return "repeat_scheduled"
+            return "session_active"
+
+        if self._has_pending(station_id):
+            return "already_pending"                 # grace zaten sürüyor
         self._pending[station_id] = asyncio.create_task(
             self._countdown(station_id, source))
         log.info("İşgal olayı: istasyon=%s kaynak=%s — %.0fs geri sayım başladı",
                  station_id, source, self.s.grace_period_sec)
         return "scheduled"
 
+    # ---- hedef ayrıldı (VCA inactive) ----------------------------------
+    async def on_clear_event(self, station_id: str) -> None:
+        """Hedef bölgeden ayrıldı: olay-öncesi sayımı iptal et + boşalmayı doğrula."""
+        self._present[station_id] = False
+        task = self._pending.get(station_id)
+        if task and not task.done():
+            task.cancel()                            # grace içinde ayrıldı → ihlal YOK
+            log.info("Hedef AYRILDI (inactive): istasyon=%s — bekleyen sayım iptal, "
+                     "ihlal yok.", station_id)
+        # Oturumu hemen kapatma; kısa titremeyi elemek için vacancy_grace_sec bekle.
+        self._schedule_vacancy_close(station_id)
+
+    # ---- iç: geri sayım + değerlendirme --------------------------------
     async def _countdown(self, station_id: str, source: str) -> None:
         try:
             await asyncio.sleep(self.s.grace_period_sec)
@@ -61,67 +93,90 @@ class ViolationEngine:
         finally:
             self._pending.pop(station_id, None)
 
-    # ---- ihlal kararı ---------------------------------------------------
     async def evaluate(self, station_id: str,
                        source: str = "manual") -> Optional[ViolationEvent]:
-        """Telemetriyi sorar; ihlalse kanıt üretir. (Test için doğrudan da çağrılır.)"""
+        """Karar: hâlâ orada + telemetri 'şarj yok' ise ihlal kaydet. (Testten de çağrılır.)"""
+        if not self._present.get(station_id, True):
+            log.info("Karar anında hedef YOK (grace içinde ayrılmış): istasyon=%s — "
+                     "olay yok.", station_id)
+            return None
+
         reading = self.telemetry.get_charging_status(station_id)
         status = reading.status
-
         if status.value in self.s.non_violation_statuses:
-            log.info("İhlal YOK: istasyon=%s durum=%s — olay sessizce kapandı.",
+            log.info("İhlal YOK: istasyon=%s durum=%s — oturum açılmadı.",
                      station_id, status.value)
             return None
 
-        if self._debounced(station_id):
-            log.info("Debounce: istasyon=%s — yakın zamanda ihlal var, tek kayıt.",
-                     station_id)
-            return None
-
-        # --- İHLAL: kanıt yakala (gerçek kamera snapshot) ---
+        # --- İHLAL: kanıt yakala (bloklayan I/O thread'e) ---
         try:
-            image = self.camera.snapshot(station_id)
-        except Exception as exc:                       # kamera hatası olayı düşürmesin
+            image = await asyncio.to_thread(self.camera.snapshot, station_id)
+        except Exception as exc:
             log.error("Snapshot başarısız (istasyon=%s): %s", station_id, exc)
             image, key, uri = None, None, None
         else:
             now = utcnow()
             key = f"{station_id}/{now.strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:8]}.jpg"
-            uri = self.storage.put(key, image)
+            uri = await asyncio.to_thread(self.storage.put, key, image)
 
         event = ViolationEvent(
-            station_id=station_id,
-            detected_at=utcnow(),
-            telemetry_status=status,
-            image_key=key,
-            image_uri=uri,
-            source=source,
-            state=EventState.OPEN,
+            station_id=station_id, detected_at=utcnow(), telemetry_status=status,
+            image_key=key, image_uri=uri, source=source, state=EventState.OPEN,
             note="" if image else "snapshot alinamadi",
         )
-        # Store-and-forward 1. adım: ÖNCE yerele yaz (outbox).
-        event = self.store.save(event)
-        # Bildirim (kendi backend'imizden).
+        event = await asyncio.to_thread(self.store.save, event)   # outbox (önce yerele)
         try:
             self.notifier.notify(event)
         except Exception as exc:
             log.error("Bildirim hatası: %s", exc)
-        # 2. adım: merkeze gönderim kuyruğu (retry'lı, asenkron).
         if self.forwarder:
             self.forwarder.enqueue(event)
-        log.warning("İHLAL kaydedildi: olay#%s istasyon=%s durum=%s",
+
+        # Oturumu aç: bu işgal raporlandı (sıradaki active'ler tekrar olay üretmez).
+        self._session_active[station_id] = True
+        self._last_incident_at[station_id] = utcnow()
+        log.warning("İHLAL kaydedildi: olay#%s istasyon=%s durum=%s (oturum AÇIK)",
                     event.id, station_id, status.value)
         return event
 
-    # ---- debounce -------------------------------------------------------
-    def _debounced(self, station_id: str) -> bool:
-        last = self.store.last_violation_at(station_id)
-        if last is None:
-            return False
-        return (utcnow() - last) < timedelta(seconds=self.s.debounce_window_sec)
+    # ---- iç: boşalma doğrulama (oturum kapatma) ------------------------
+    def _schedule_vacancy_close(self, station_id: str) -> None:
+        self._cancel_vacancy(station_id)
+        self._vacancy[station_id] = asyncio.create_task(self._vacancy_close(station_id))
 
-    # ---- kapanış --------------------------------------------------------
+    async def _vacancy_close(self, station_id: str) -> None:
+        try:
+            await asyncio.sleep(self.s.vacancy_grace_sec)
+            if not self._present.get(station_id, False):
+                if self._session_active.get(station_id):
+                    log.info("Oturum KAPANDI: istasyon=%s boşaldı (>%.0fs) — sıradaki "
+                             "araç için hazır.", station_id, self.s.vacancy_grace_sec)
+                self._session_active[station_id] = False
+                self._last_incident_at.pop(station_id, None)
+        except asyncio.CancelledError:
+            pass
+        finally:
+            self._vacancy.pop(station_id, None)
+
+    def _cancel_vacancy(self, station_id: str) -> None:
+        t = self._vacancy.get(station_id)
+        if t and not t.done():
+            t.cancel()
+
+    # ---- yardımcılar ----------------------------------------------------
+    def _has_pending(self, station_id: str) -> bool:
+        t = self._pending.get(station_id)
+        return bool(t and not t.done())
+
+    def _repeat_due(self, station_id: str) -> bool:
+        last = self._last_incident_at.get(station_id)
+        if last is None:
+            return True
+        return (utcnow() - last).total_seconds() >= self.s.repeat_notify_sec
+
     def cancel_all(self) -> None:
-        for task in self._pending.values():
-            task.cancel()
-        self._pending.clear()
+        for d in (self._pending, self._vacancy):
+            for task in d.values():
+                if not task.done():
+                    task.cancel()
+            d.clear()
