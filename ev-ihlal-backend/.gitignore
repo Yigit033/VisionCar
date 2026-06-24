@@ -1,0 +1,9 @@
+# Sırlar
+.env
+
+# Yerel veriler (SQLite DB + kanıt görselleri) — kişisel veri içerebilir, repoya girmez
+data/
+
+# Python
+__pycache__/
+*.pyc

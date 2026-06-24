@@ -1,0 +1,7 @@
+# EV ihlal backend — Faz 1 (yerel, uçtan uca). Bağımlılıklar minimum tutulur.
+fastapi>=0.110
+uvicorn[standard]>=0.27
+requests>=2.31        # ISAPI snapshot (digest auth)
+python-dotenv>=1.0    # .env'den ayar/sırların okunması
+Pillow>=10.0          # yalnızca MockCamera (kamerasız test) için sentetik görsel
+# Faz 2'de eklenecek: boto3 (S3). ŞİMDİ yok.
